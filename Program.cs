@@ -92,8 +92,19 @@ namespace MiniScreenSharp
                         item.Send();
                         item.DataChanged = false;
                     }
+                    if (item.TouchStat.NowStat == TwoStat.FreezeToActive)
+                    {
+                        item.WriteText((byte)(item.TouchStat.NowStat + 33));
+                        Console.WriteLine($"Touched! {item.TouchStat.NowStat} ");
+                        
+                    }
+                    else if (item.TouchStat.NowStat == TwoStat.ActiveToFreeze)
+                    {
+                        item.WriteText((byte)(item.TouchStat.NowStat + 33));
+                        Console.WriteLine($"Released! {item.TouchStat.NowStat} ");
+                    }
                     Console.WriteLine($"Touch : {item.Touch}");
-                    item.WriteText();
+                    //item.ScreenPressRead();//复位触摸状态
                 }
                 Thread.Sleep(50);
             }
@@ -158,6 +169,7 @@ namespace MiniScreenSharp
         public SerialPort Device;
         public (int, int) Size = (160 , 80);
         public int Touch = 65536;
+        public Stat TouchStat = new Stat();
         public byte[] _data = [];
         public byte[] Data 
         {
@@ -280,13 +292,25 @@ namespace MiniScreenSharp
                 else
                 {
                     Touch = reqTouch[4]*256+ reqTouch[5];
+                    if (Touch == 3651)
+                    {
+                        TouchStat.Update(TwoStat.Any);
+                    }    
+                    else if (Touch < 3300)
+                    {
+                        TouchStat.Update(TwoStat.Active);
+                    }
+                    else 
+                    {
+                        TouchStat.Update(TwoStat.Freeze);
+                    }
                     return true;
                 }
                 
             }
         }
 
-        public bool WriteText()
+        public bool WriteText(byte text)
         {
             if (CheckVaild() == false)
             {
@@ -296,11 +320,7 @@ namespace MiniScreenSharp
             {
                 SetXY(0, 0);
                 SetColor(Color.WHITE, Color.BLACK);
-                Device.Write([2, 3, 2, 99, (byte)Math.Floor(3651d/256), 3651 % 256] , 0 , 6);
-                SetXY(32, 0);
-                Device.Write([2, 3, 2, 101, (byte)Math.Floor(3651d / 256), 3651 % 256], 0, 6);
-                SetXY(64, 0);
-                Device.Write([2, 3, 2, 98, (byte)Math.Floor(3651d / 256), 3651 % 256], 0, 6);
+                Device.Write([2, 3, 2, text, (byte)Math.Floor(3651d / 256), 3651 % 256] , 0 , 6);
                 while (true)
                 {
                     if (Device.ReadExisting().Length == 0)
@@ -313,7 +333,7 @@ namespace MiniScreenSharp
         }
 
         public bool SetXY(int _x , int _y) => SetValue(mode: 0 , _x , _y);
-        public bool SetSize(int _x , int _y) => SetValue(mode: 1 , _x , _y);
+        public bool SetSize(int _w , int _h) => SetValue(mode: 1 , _w , _h);
         public bool SetColor(Color _fColor, Color _bColor) => SetValue(mode: 2 , (int)_fColor, (int)_bColor);
 
         public bool SetValue(byte mode , int _x , int _y)
@@ -328,6 +348,76 @@ namespace MiniScreenSharp
             }
             return true;
         }
+
+        //public bool 
+    }
+
+    public struct Stat
+    {
+        public TwoStat NowStat = TwoStat.Any;
+
+        public Stat()
+        {
+
+        }
+
+        public bool IsChanged()
+        {
+            if (NowStat == TwoStat.ActiveToFreeze || NowStat == TwoStat.FreezeToActive)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        public bool Update(TwoStat stat)
+        {
+            if (stat == TwoStat.Any)
+            {
+                if (NowStat == TwoStat.ActiveToFreeze)
+                {
+                    NowStat = TwoStat.Freeze;
+                }
+                else if (NowStat == TwoStat.FreezeToActive)
+                {
+                    NowStat = TwoStat.Active;
+                }
+                return true;
+            }
+            else if (NowStat == stat)
+            {
+                return false;
+            }
+            else if ((NowStat == TwoStat.Active || NowStat == TwoStat.FreezeToActive) && (stat == TwoStat.Freeze || stat == TwoStat.ActiveToFreeze))
+            {
+                NowStat = TwoStat.ActiveToFreeze;
+                return true;
+            }
+            else if ((NowStat == TwoStat.Freeze || NowStat == TwoStat.ActiveToFreeze) && (stat == TwoStat.Active || stat == TwoStat.FreezeToActive))
+            {
+                NowStat = TwoStat.FreezeToActive;
+                return true;
+            }
+            else//NowStat == Any
+            {
+                NowStat = stat;
+                return true;
+            }
+            
+            return true;
+        }
+    }
+
+    public enum TwoStat
+    {
+        Active = 0,
+        Freeze = 1,
+        ActiveToFreeze = 2,
+        FreezeToActive = 3,
+        Any = 4
     }
 
     public enum Color
