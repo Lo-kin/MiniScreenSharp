@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Drawing;
 using System.IO.Ports;
 using System.Text;
 using System.Threading;
@@ -10,57 +11,8 @@ namespace MiniScreenSharp
     {
         static void Main(string[] args)
         {
-            
             ScreenSerials screens = new ScreenSerials();
             screens.Run();
-
-            /*
-            Console.WriteLine("Hello, World!");
-
-            foreach (var item in SerialPort.GetPortNames())
-            {
-                Console.WriteLine($"{item}");
-            }
-            SerialPort s = new SerialPort("COM7", 19200);
-
-            s.Open();
-            while (true)
-            {
-                if (s.ReadExisting() == "\x00MSN01")
-                {
-                    Console.WriteLine("Complete");
-                    break;
-                }
-                Thread.Sleep(150);
-            }
-            byte[] sh = System.Text.Encoding.UTF8.GetBytes("\x00MSNCN");
-            foreach (var item in sh)
-            {
-                Console.Write($" {item} ");
-            }
-            s.Write(sh , 0 , sh.Length);
-            Thread.Sleep(150);
-            Console.WriteLine($"Shake : {s.ReadExisting()}");
-
-            while (true)
-            {
-                byte[] reqTouch = [8, 9, 0, 0, 0, 0];
-                s.Write(reqTouch, 0, 6);
-                byte[] read = new byte[8];
-                int re = s.Read(read, 0, 6);
-                Console.WriteLine($"Request Touch  : {ByteToHex(read)}");
-                //Thread.Sleep(350);
-            }*/
-        }
-
-        private static string ByteToHex(byte[] Bytes)
-        {
-            string str = string.Empty;
-            foreach (byte Byte in Bytes)
-            {
-                str += String.Format("{0:X2}", Byte) + " ";
-            }
-            return str.Trim();
         }
     }
 
@@ -87,6 +39,7 @@ namespace MiniScreenSharp
                 {
                     
                     item.ScreenPressRead();
+                    
                     if (item.DataChanged)
                     {
                         item.Send();
@@ -94,19 +47,17 @@ namespace MiniScreenSharp
                     }
                     if (item.TouchStat.NowStat == TwoStat.FreezeToActive)
                     {
-                        item.WriteText((byte)(item.TouchStat.NowStat + 33));
+                        item.WriteText(">w<");
                         Console.WriteLine($"Touched! {item.TouchStat.NowStat} ");
                         
                     }
                     else if (item.TouchStat.NowStat == TwoStat.ActiveToFreeze)
                     {
-                        item.WriteText((byte)(item.TouchStat.NowStat + 33));
+                        item.WriteText("\'w\'");
                         Console.WriteLine($"Released! {item.TouchStat.NowStat} ");
                     }
-                    Console.WriteLine($"Touch : {item.Touch}");
-                    //item.ScreenPressRead();//复位触摸状态
+                    Thread.Sleep(50);
                 }
-                Thread.Sleep(50);
             }
         }
 
@@ -132,17 +83,19 @@ namespace MiniScreenSharp
                 }
                 if (bytes.SequenceEqual(new byte[] { 0, 77, 83, 78, 48, 49 }))//串口数据\x00MSN01
                 {
+
                     device.Write([ 0 ,77 ,83 ,78 , 67, 78 ] , 0 , 6);//握手\x00MSNCN
                     Thread.Sleep(150);
                     string GetRequest = device.ReadExisting();
                     if (GetRequest.StartsWith("\x00MSN") == true)//回应成功\x00MSNCN
                     {
-                        list.Add(new MiniScreen()
+                        MiniScreen screen = new MiniScreen() 
                         {
                             Device = device
-                        });
+                        };
+                        screen.LoadImage(Cv2.ImRead("test.png", ImreadModes.Color));
+                        list.Add(screen);
                     }
-
                     break;
                 }
             }
@@ -206,12 +159,56 @@ namespace MiniScreenSharp
             return true;
         }
 
-        public bool LoadPicture(Mat d)
+        public bool LoadImage(Mat OriginMat)
         {
             Data = [];
-            List<byte> ImgData = d.Resize(new Size(Size.Item1, Size.Item2)).ToBytes().ToList();
-            //for (int i = 0;
-            //Data.AddRange([ 2, 3, 8, 1, 0, 0 ]);
+            PreAddImage(0 , 0 , Size.Item1, Size.Item2);
+
+            Mat ResizeMat = OriginMat.Resize(new OpenCvSharp.Size(Size.Item1, Size.Item2));
+            uint[] ImgData = [];
+            List<uint> RGB565Data = [];
+            
+            for (int y = 0; y < ResizeMat.Height; y++)
+            {
+                for (int x = 0; x < ResizeMat.Width; x++)
+                {
+                    Vec3b color = ResizeMat.At<Vec3b>(y, x);
+                    uint b = (uint)color[0] >> 3;
+                    uint g = (uint)color[1] >> 2;
+                    uint r = (uint)color[2] >> 3;
+
+                    RGB565Data.Add((r << 11) |( g << 5 )| b);
+                }
+            }
+
+            ImgData = RGB565Data.ToArray();
+
+            List<byte> EmptyData = [];
+            int BlockSize = 128;
+            for (int i = 0; i < MathF.Floor(ImgData.Length / BlockSize); i ++)
+            {
+                uint[] blockData = [.. RGB565Data.GetRange(i * BlockSize , BlockSize)];
+                uint[] blockCMD = new uint[(int)Math.Floor(BlockSize / 2d)];
+                for (int j = 0; j < Math.Floor(BlockSize / 2d); j++)
+                {
+                    blockCMD[j] = blockData[j * 2 + 0] * 65536 + blockData[j * 2 + 1];
+                }
+                uint MaxResult = (from n in blockCMD
+                          group n by n into g
+                          orderby g.Count() descending
+                          select g).First().First();
+                EmptyData.AddRange(new byte[] { 2, 4 }.Concat(BitConverter.GetBytes(MaxResult).Reverse()).ToArray());
+                for (int j = 0; j < Math.Floor(BlockSize / 2d); j++)
+                {
+                    if (blockData[j * 2 + 0] * 65536 + blockData[j * 2 + 1] != MaxResult)
+                    {
+                        EmptyData.AddRange(new byte[] { 4, (byte)j }.Concat(BitConverter.GetBytes((ushort)blockData[j * 2 + 0]).Reverse().Concat(BitConverter.GetBytes((ushort)blockData[j * 2 + 1]).Reverse())));
+                    }
+                }
+                EmptyData.AddRange([2 , 3 , 8 , 1 , 0 , 0]);
+            }
+            DataChanged = true;
+            Data = EmptyData.ToArray();
             return true;
         }
 
@@ -281,36 +278,57 @@ namespace MiniScreenSharp
             }
             else
             {
-                byte[] reqTouch = [8, 9, 0, 0, 0, 0];
-                Device.Write(reqTouch, 0, 6);
-                int re = Device.Read(reqTouch, 0, 6);
-                if (re < 6)
+                try
+                {
+                    byte[] reqTouch = [8, 9, 0, 0, 0, 0];
+                    Device.Write(reqTouch, 0, 6);
+                    int re = Device.Read(reqTouch, 0, 6);
+                    if (re < 6)
+                    {
+                        Touch = 0;
+                        return false;
+                    }
+                    else
+                    {
+                        Touch = reqTouch[4] * 256 + reqTouch[5];
+                        if (reqTouch[0] != 8 && reqTouch[1] != 9)
+                        {
+                            TouchStat.Update(TwoStat.Any);
+                        }
+                        else if (Touch < 3000)
+                        {
+                            TouchStat.Update(TwoStat.Active);
+                        }
+                        else
+                        {
+                            TouchStat.Update(TwoStat.Freeze);
+                        }
+                        return true;
+                    }
+                }
+                catch
                 {
                     Touch = 0;
+                    TouchStat.Update(TwoStat.Any);
                     return false;
                 }
-                else
-                {
-                    Touch = reqTouch[4]*256+ reqTouch[5];
-                    if (Touch == 3651)
-                    {
-                        TouchStat.Update(TwoStat.Any);
-                    }    
-                    else if (Touch < 3300)
-                    {
-                        TouchStat.Update(TwoStat.Active);
-                    }
-                    else 
-                    {
-                        TouchStat.Update(TwoStat.Freeze);
-                    }
-                    return true;
-                }
-                
             }
         }
 
-        public bool WriteText(byte text)
+        public bool WriteText(string text)
+        {
+            if (CheckVaild() == false)
+            {
+                return false;
+            }
+            for (int i = 0;i < text.Length; i++)
+            { 
+                WriteChar(text[i] , i*32 , 0);
+            }
+            return true;
+        }
+
+        public bool WriteChar(char text , int xPos , int yPos , int charWidth = 0 , int charHeight = 0)
         {
             if (CheckVaild() == false)
             {
@@ -318,9 +336,9 @@ namespace MiniScreenSharp
             }
             else
             {
-                SetXY(0, 0);
+                SetXY(xPos, yPos);
                 SetColor(Color.WHITE, Color.BLACK);
-                Device.Write([2, 3, 2, text, (byte)Math.Floor(3651d / 256), 3651 % 256] , 0 , 6);
+                Device.Write([2, 3, 2, (byte)text, (byte)Math.Floor(3651d / 256), 3651 % 256] , 0 , 6);
                 while (true)
                 {
                     if (Device.ReadExisting().Length == 0)
@@ -349,7 +367,20 @@ namespace MiniScreenSharp
             return true;
         }
 
-        //public bool 
+        public bool PreAddImage(int _x , int _y , int _w , int _h)
+        {
+            if (CheckVaild() == false)
+            {
+                return false;
+            }
+            else
+            {
+                SetXY(_x, _y);
+                SetSize(_w, _h);
+                Device.Write([2, 3, 7, 0, 0, 0] , 0 , 6);
+                return true;
+            }
+        }
     }
 
     public struct Stat

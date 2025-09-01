@@ -8,17 +8,45 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="0.png" />
+    <None Remove="logo.bin" />
+    <None Remove="ot.png" />
     <None Remove="test.png" />
+    <None Remove="wallhaven-5g22q5_3840x1600.png" />
+    <None Remove="wallhaven-9d3181_1920x1080.png" />
+    <None Remove="wallhaven-vmkx1p_1920x1080.png" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="OpenCvSharp4" Version="4.11.0.20250507" />
+    <PackageReference Include="OpenCvSharp4.Extensions" Version="4.11.0.20250507" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.11.0.20250507" />
     <PackageReference Include="System.IO.Ports" Version="9.0.8" />
   </ItemGroup>
 
   <ItemGroup>
+
+    <Content Include="0.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+
+    <Content Include="logo.bin">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+
+    <Content Include="ot.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <Content Include="test.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="wallhaven-5g22q5_3840x1600.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="wallhaven-9d3181_1920x1080.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="wallhaven-vmkx1p_1920x1080.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
