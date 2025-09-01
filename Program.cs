@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Drawing;
 using System.IO.Ports;
 using System.Text;
 using System.Threading;
@@ -14,6 +13,137 @@ namespace MiniScreenSharp
             ScreenSerials screens = new ScreenSerials();
             screens.Run();
         }
+    }
+
+    public class FancyConsole
+    {
+        public Dictionary<string , (string , bool)> ValueStat = new();
+        public Dictionary<string , Func<bool>> Menu = new();
+        public bool ShowLock = false;
+        public int SelectedIndex = 0;
+        public int MenuIndex
+        {
+            get
+            {
+                return SelectedIndex;
+            }
+            set
+            {
+                if (value < 0)
+                {
+                    SelectedIndex = 0;
+                }
+                else if (value >= Menu.Count)
+                {
+                    SelectedIndex = Menu.Count - 1;
+                }
+                else
+                {
+                    SelectedIndex = value;
+                }
+            }
+        }
+
+
+        public bool SetValue(string key , string value)
+        {
+            if (ValueStat.ContainsKey(key) == false)
+            {
+                ValueStat.Add(key , (value , true));
+            }
+            else
+            {
+                if (ValueStat[key].Item1 != value)
+                {
+                    ValueStat[key] = (value , true);
+                }
+            }
+            return true;
+        }
+
+        public bool ShowValue()
+        {
+            if (ShowLock == true)
+            {
+                return false;
+            }
+            Console.CursorLeft = 0;
+            Console.CursorTop = 0;
+            foreach (var item in ValueStat)
+            {
+                Console.Write(new string(" ".ToCharArray()[0], Console.BufferWidth));
+                Console.CursorLeft = 0;
+                Write($"{item.Key} : " , ConsoleColor.Cyan);
+                if (item.Value.Item2 == true)
+                {
+
+                    WriteLine(item.Value.Item1 , ConsoleColor.Red);
+                }
+                else
+                {
+                    WriteLine(item.Value.Item1 , ConsoleColor.White);
+                }
+                ValueStat[item.Key] = (item.Value.Item1 , false);
+            }
+            return true;
+        }
+
+        public bool Selector()
+        {
+            while (true)
+            {
+                ShowLock = true;
+                Console.CursorTop = ValueStat.Count + 1;
+                Console.CursorLeft = 0;
+                foreach (var item in Menu)
+                {
+                    Console.WriteLine(new string(" ".ToCharArray()[0], Console.BufferWidth));
+                    Console.CursorLeft = 0;
+                    if (Menu.ElementAt(MenuIndex).Key == item.Key)
+                    {
+                        WriteLine($"> {item.Key}" , ConsoleColor.Green);
+                    }
+                    else
+                    {
+                        WriteLine($"  {item.Key}" , ConsoleColor.White);
+                    }
+                }
+                ShowLock = false;
+                var readKey = Console.ReadKey(true);
+                if (readKey.Key == ConsoleKey.UpArrow)
+                {
+                    MenuIndex--;
+                }
+                else if (readKey.Key == ConsoleKey.DownArrow)
+                {
+                    MenuIndex++;
+                }
+                else if (readKey.Key == ConsoleKey.Enter)
+                {
+                    var action = Menu.ElementAt(MenuIndex).Value;
+                    if (action != null)
+                    {
+                        action();
+                    }
+                    Console.Clear();
+                }
+            }
+        }
+
+        public static void WriteLine(string text , ConsoleColor color = ConsoleColor.White)
+        {
+            Console.ForegroundColor = color;
+            Console.WriteLine(text);
+            Console.ResetColor();
+        }
+        public static void Write(string text, ConsoleColor color = ConsoleColor.White)
+        {
+            Console.ForegroundColor = color;
+            Console.Write(text);
+            Console.ResetColor();
+        }
+
+
     }
 
     public class ScreenSerials
@@ -32,29 +162,17 @@ namespace MiniScreenSharp
                 Console.WriteLine("No Screen Found!");
                 return false;
             }
-            //Screens[0].LoadPicture(Cv2.ImRead("test.png", ImreadModes.Color));
             while (true)
             {
                 foreach (var item in Screens)
                 {
-                    
-                    item.ScreenPressRead();
-                    
-                    if (item.DataChanged)
+                    try
                     {
-                        item.Send();
-                        item.DataChanged = false;
+                        item.Update();
                     }
-                    if (item.TouchStat.NowStat == TwoStat.FreezeToActive)
+                    catch (Exception ex)
                     {
-                        item.WriteText(">w<");
-                        Console.WriteLine($"Touched! {item.TouchStat.NowStat} ");
-                        
-                    }
-                    else if (item.TouchStat.NowStat == TwoStat.ActiveToFreeze)
-                    {
-                        item.WriteText("\'w\'");
-                        Console.WriteLine($"Released! {item.TouchStat.NowStat} ");
+                        Console.WriteLine($"Error: {ex.Message}");
                     }
                     Thread.Sleep(50);
                 }
@@ -83,7 +201,6 @@ namespace MiniScreenSharp
                 }
                 if (bytes.SequenceEqual(new byte[] { 0, 77, 83, 78, 48, 49 }))//串口数据\x00MSN01
                 {
-
                     device.Write([ 0 ,77 ,83 ,78 , 67, 78 ] , 0 , 6);//握手\x00MSNCN
                     Thread.Sleep(150);
                     string GetRequest = device.ReadExisting();
@@ -93,7 +210,7 @@ namespace MiniScreenSharp
                         {
                             Device = device
                         };
-                        screen.LoadImage(Cv2.ImRead("test.png", ImreadModes.Color));
+                        screen.LoadImageSource("test.png");
                         list.Add(screen);
                     }
                     break;
@@ -113,16 +230,16 @@ namespace MiniScreenSharp
                 return false;
             }
         }
-
-
     }
 
     public class MiniScreen
     {
-        public SerialPort Device;
-        public (int, int) Size = (160 , 80);
+        public SerialPort Device = new SerialPort();
+        public FancyConsole ScreenInfo = new FancyConsole();
+        public Size ScreenSize = new Size(160 , 80);
         public int Touch = 65536;
         public Stat TouchStat = new Stat();
+        public List<byte[]> ImageData = [];
         public byte[] _data = [];
         public byte[] Data 
         {
@@ -134,6 +251,8 @@ namespace MiniScreenSharp
             }
         }
         public bool DataChanged = true;
+
+        public event Action UpdateEvent;
 
         public bool CheckVaild()
         {
@@ -147,27 +266,91 @@ namespace MiniScreenSharp
             }
         }
 
-        public bool Dispose()
+        public MiniScreen()
         {
-            if (Device != null && Device.IsOpen)
-            {
-                Device.Close();
-                Device.Dispose();
-                Device = null;
-            }
-            Data = [];
+            ScreenInfo.Menu.Add("发送图片", () => {
+                Console.Write("输入路径: ");
+                string path = Console.ReadLine();
+                if (path == null)
+                {
+                    return false;
+                }
+                else
+                {
+                    return LoadImageSource(path);
+                }
+            });
+            ScreenInfo.Menu.Add("清屏", () => {
+                Erase(0,0);
+                return true;
+            });
+            ScreenInfo.Menu.Add("写入文本", () => {
+                Console.Write("输入文本: ");
+                string text = Console.ReadLine();
+                if (text == null)
+                {
+                    return false;
+                }
+                else
+                {
+                    return WriteText(text);
+                }
+            });
+            ScreenInfo.Menu.Add("退出程序", () => {
+                Dispose();
+                Environment.Exit(0);
+                return true;
+            });
+            Thread thread = new Thread(() => { ScreenInfo.Selector(); });
+            thread.Start();
+            UpdateEvent += () => {
+                ScreenPressRead();
+                ScreenInfo.SetValue("设备串口号", Device.PortName);
+                ScreenInfo.SetValue("触摸参数", Touch.ToString());
+                ScreenInfo.SetValue("触摸情况", TouchStat.NowStat.ToString());
+                if (DataChanged)
+                {
+                    Send();
+                    DataChanged = false;
+                }
+                if (TouchStat.NowStat == TwoStat.FreezeToActive)
+                {
+                    WriteText(">w<");
+                }
+                else if (TouchStat.NowStat == TwoStat.ActiveToFreeze)
+                {
+                    WriteText("\'w\'");
+                }
+                ScreenInfo.ShowValue();
+            };
+        }
+
+        public bool Update()
+        {
+            UpdateEvent();
             return true;
+        }
+
+        public bool LoadImageSource(string path)
+        {
+            Mat img = Cv2.ImRead(path, ImreadModes.Color);
+            if (img.Empty())
+            {
+                return false;
+            }
+            else
+            {
+                return LoadImage(img);
+            }
         }
 
         public bool LoadImage(Mat OriginMat)
         {
             Data = [];
-            PreAddImage(0 , 0 , Size.Item1, Size.Item2);
+            PreAddImage(0 , 0 , ScreenSize.Width, ScreenSize.Height);
 
-            Mat ResizeMat = OriginMat.Resize(new OpenCvSharp.Size(Size.Item1, Size.Item2));
-            uint[] ImgData = [];
+            Mat ResizeMat = OriginMat.Resize(ScreenSize);//rgb888 to rgb565 (6->4)
             List<uint> RGB565Data = [];
-            
             for (int y = 0; y < ResizeMat.Height; y++)
             {
                 for (int x = 0; x < ResizeMat.Width; x++)
@@ -181,7 +364,7 @@ namespace MiniScreenSharp
                 }
             }
 
-            ImgData = RGB565Data.ToArray();
+            uint[] ImgData = [.. RGB565Data];
 
             List<byte> EmptyData = [];
             int BlockSize = 128;
@@ -196,19 +379,25 @@ namespace MiniScreenSharp
                 uint MaxResult = (from n in blockCMD
                           group n by n into g
                           orderby g.Count() descending
-                          select g).First().First();
-                EmptyData.AddRange(new byte[] { 2, 4 }.Concat(BitConverter.GetBytes(MaxResult).Reverse()).ToArray());
+                          select g).First().First();//出现次数最多的值
+                EmptyData.AddRange([2, 4]);
+                EmptyData.AddRange(BitConverter.GetBytes(MaxResult).Reverse());//uint 转byte[]采用大端模式,下面同理
                 for (int j = 0; j < Math.Floor(BlockSize / 2d); j++)
                 {
                     if (blockData[j * 2 + 0] * 65536 + blockData[j * 2 + 1] != MaxResult)
                     {
-                        EmptyData.AddRange(new byte[] { 4, (byte)j }.Concat(BitConverter.GetBytes((ushort)blockData[j * 2 + 0]).Reverse().Concat(BitConverter.GetBytes((ushort)blockData[j * 2 + 1]).Reverse())));
+                        EmptyData.AddRange([4, (byte)j]);
+                        EmptyData.AddRange(BitConverter.GetBytes((ushort)blockData[j * 2 + 0]).Reverse());
+                        EmptyData.AddRange(BitConverter.GetBytes((ushort)blockData[j * 2 + 1]).Reverse());
                     }
                 }
                 EmptyData.AddRange([2 , 3 , 8 , 1 , 0 , 0]);
             }
-            DataChanged = true;
             Data = EmptyData.ToArray();
+            RGB565Data.Clear();
+            ResizeMat.Dispose();
+            ImgData = [];
+            EmptyData.Clear();
             return true;
         }
 
@@ -237,36 +426,6 @@ namespace MiniScreenSharp
                 Device.Write(Data, 0, Data.Length);
             }
             return true;
-        }
-
-        public int Read()
-        {
-            if (CheckVaild() == false)
-            {
-                return 0;
-            }
-            else
-            {
-                byte[] bytes = new byte[6];
-                int count = 0;
-                try
-                {
-                    count = Device.Read(bytes, 0, bytes.Length);
-                    foreach (var item in bytes)
-                    {
-                        Console.Write($" {item} ");
-                    }
-                }
-                catch
-                {
-                    
-                }
-                return count;
-
-
-                //Console.WriteLine($"Request Touch : {bytes}");
-
-            }
         }
 
         public bool ScreenPressRead()
@@ -323,7 +482,7 @@ namespace MiniScreenSharp
             }
             for (int i = 0;i < text.Length; i++)
             { 
-                WriteChar(text[i] , i*32 , 0);
+                WriteChar(text[i] , i*32 + (ScreenSize.Width / 2) - (text.Length * 32 / 2) , (ScreenSize.Height / 2) - (64 / 2));
             }
             return true;
         }
@@ -380,6 +539,31 @@ namespace MiniScreenSharp
                 Device.Write([2, 3, 7, 0, 0, 0] , 0 , 6);
                 return true;
             }
+        }
+
+        public bool Erase(int page , int size)
+        {
+            if (CheckVaild() == false)
+            {
+                return false;
+            }
+            else
+            {
+                Device.Write([3 ,2 ,0 ,0 ,0 ,0] , 0 , 6);
+                return true;
+            }
+        }
+
+        public bool Dispose()
+        {
+            if (Device != null && Device.IsOpen)
+            {
+                Device.Close();
+                Device.Dispose();
+                Device = null;
+            }
+            Data = [];
+            return true;
         }
     }
 

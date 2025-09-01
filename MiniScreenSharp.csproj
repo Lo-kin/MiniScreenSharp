@@ -9,7 +9,9 @@
 
   <ItemGroup>
     <None Remove="0.png" />
+    <None Remove="abnormal.png" />
     <None Remove="logo.bin" />
+    <None Remove="normal.png" />
     <None Remove="ot.png" />
     <None Remove="test.png" />
     <None Remove="wallhaven-5g22q5_3840x1600.png" />
@@ -30,7 +32,15 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
 
+    <Content Include="abnormal.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+
     <Content Include="logo.bin">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+
+    <Content Include="normal.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
 
